@@ -1,0 +1,33 @@
+name: Build ESP32-S3 Custom
+
+on:
+  workflow_dispatch: # Te permet de lancer la compilation avec un bouton unique
+
+jobs:
+  build_s3:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+      with:
+        submodules: 'recursive'
+
+    - name: Install ESP-IDF
+      uses: espressif/esp-idf-ci-action@v1
+      with:
+        esp_idf_version: 'v5.1.2' # Version stable recommandée pour le S3 sur Retro-Go
+        target: 'esp32s3'
+
+    - name: Compile S3 Firmware
+      run: |
+        idf.py set-target esp32s3
+        idf.py build
+
+    - name: Upload Image Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: My-ESP32S3-Firmware
+        path: |
+          build/retro-go.img
+          build/merged-firmware.bin
