@@ -1,7 +1,7 @@
 name: ci2
 
 on:
-  workflow_dispatch:      # Permet de lancer le build manuellement
+  workflow_dispatch:      # Permet de lancer le build manuellement avec le bouton
   push:
 
 jobs:
@@ -9,42 +9,34 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # Remove ~18 GiB of preinstalled software to have more disk space during the build
     - name: Cleanup runner
       run: |
-        df -h
-        sudo rm -rf /opt/microsoft /usr/local/.ghcup /usr/local/julia* /usr/share/dotnet /usr/share/swift /usr/lib/llvm*
-        df -h
+        sudo rm -rf /opt/microsoft /usr/local/.ghcup /usr/share/dotnet /usr/share/swift /usr/lib/llvm*
 
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
-        submodules: 'recursive' # On s'assure que tous les émulateurs s'installent bien dans Docker
+        submodules: 'recursive'
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+    # Étape 1 : On construit l'image Docker de base (qui contient ESP-IDF)
+    - name: Build Docker Image
+      run: |
+        docker build -t retro-go-builder .
 
-    # On modifie le build Docker pour lui dire de compiler spécifiquement pour l'ESP32-S3
-    - name: Build
-      uses: docker/build-push-action@v6
-      with:
-        context: .
-        tags: retro-go:latest
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-        load: true
-        build-args: |
-          TARGET=esp32-s3-devkit
-
-    # On modifie l'extraction pour copier TOUS les formats de fichiers générés (.fw, .img, .bin)
-    - name: Extract binaries from docker image
+    # Étape 2 : On force Docker à lancer la configuration et la compilation SPECIFIQUE au S3
+    # On lui demande ensuite de jeter le résultat dans notre dossier local /build
+    - name: Compile and Extract ESP32-S3
       run: |
         mkdir -p build
-        docker run --rm -v $(pwd)/build:/dist retro-go:latest sh -c "cp -r /app/build/* /dist/ 2>/dev/null || cp /app/*.img /dist/ 2>/dev/null || cp /app/*.fw /dist/ 2>/dev/null"
+        docker run --rm -v $(pwd)/build:/dist retro-go-builder sh -c "
+          python rg_tool.py mconfig esp32-s3-devkit && \
+          idf.py build && \
+          cp build/retro-go.img /dist/ 2>/dev/null || cp build/merged-firmware.bin /dist/ 2>/dev/null || cp build/**/*.bin /dist/
+        "
 
-    # On demande à GitHub de sauvegarder absolument tout ce qui a été extrait
+    # Étape 3 : On récupère le précieux fichier .img
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: binaries
+        name: My-ESP32S3-Firmware
         path: build/
